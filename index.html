@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard Rodoanel - Monitoramento de Vegetação</title>
+
+    <link rel="stylesheet" href="style.css" />
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css"
+    />
+  </head>
+
+  <body>
+    <header class="topbar">
+      <div class="header-content">
+        <div>
+          <span class="tag-sistema">CCR Motiva • Monitoramento Ambiental</span>
+          <h1>Dashboard de Monitoramento Vegetal</h1>
+          <p>
+            Trecho Oeste do Rodoanel • Dados geoespaciais e climáticos em tempo
+            real
+          </p>
+        </div>
+
+        <div class="status-sistema">
+          <span class="status-dot"></span>
+          Sistema ativo
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section id="map"></section>
+
+      <aside id="painel">
+        <div class="botoes-painel">
+          <button id="btn-atualizar">Atualizar dados</button>
+          <button id="btn-teste">Modo teste: alerta</button>
+        </div>
+        <h2>Pontos Monitorados</h2>
+        <div id="lista-pontos"></div>
+      </aside>
+    </main>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
