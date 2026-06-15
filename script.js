@@ -63,6 +63,8 @@ let camadaPontos = L.layerGroup().addTo(map);
 // Controla se o dashboard usa clima real ou clima simulado de alerta
 let modoTeste = false;
 
+let modoCadastro = false;
+
 // =============================
 // CARREGAR GEOJSON
 // =============================
@@ -335,3 +337,95 @@ function gerarClimaTeste() {
 function gerarNumeroAleatorio(min, max) {
   return Number((Math.random() * (max - min) + min).toFixed(1));
 }
+
+document.getElementById("btn-cadastrar").addEventListener("click", () => {
+  modoCadastro = true;
+  alert("Clique no mapa para cadastrar um novo ponto de monitoramento.");
+});
+
+map.on("click", async function (event) {
+  if (!modoCadastro) return;
+
+  modoCadastro = false;
+
+  const lat = event.latlng.lat;
+  const lon = event.latlng.lng;
+
+  const nome = prompt("Digite o nome do novo ponto:");
+
+  if (!nome) return;
+
+  let clima;
+
+  if (modoTeste) {
+    clima = gerarClimaTeste();
+  } else {
+    clima = await buscarClima(lat, lon);
+  }
+
+  let risco;
+
+  if (
+    clima.temperature_2m >= 30 ||
+    clima.wind_speed_10m >= 25 ||
+    clima.relative_humidity_2m <= 25
+  ) {
+    risco = { nivel: "Alto", cor: "#e74c3c" };
+  } else if (
+    clima.temperature_2m >= 25 ||
+    clima.wind_speed_10m >= 15 ||
+    clima.relative_humidity_2m <= 40
+  ) {
+    risco = { nivel: "Médio", cor: "#f1c40f" };
+  } else {
+    risco = { nivel: "Baixo", cor: "#2ecc71" };
+  }
+
+  L.circleMarker([lat, lon], {
+    radius: 8,
+    color: "#ffffff",
+    weight: 2,
+    fillColor: risco.cor,
+    fillOpacity: 1,
+    className: risco.nivel === "Alto" ? "ponto-alerta" : "",
+  }).addTo(camadaPontos).bindPopup(`
+      <b>${nome}</b><br>
+      Ponto cadastrado manualmente<br><br>
+
+      Temperatura: ${clima.temperature_2m}°C<br>
+      Umidade: ${clima.relative_humidity_2m}%<br>
+      Vento: ${clima.wind_speed_10m} km/h<br>
+      Chuva: ${clima.precipitation} mm<br><br>
+
+      Risco: <b>${risco.nivel}</b><br>
+      Lat: ${lat.toFixed(6)}<br>
+      Lon: ${lon.toFixed(6)}
+    `);
+
+  const listaPontos = document.getElementById("lista-pontos");
+
+  const card = document.createElement("div");
+  card.classList.add("card-ponto");
+  card.style.borderLeftColor = risco.cor;
+
+  card.innerHTML = `
+    <div class="card-header">
+      <div>
+        <h3>${nome}</h3>
+        <span style="color:${risco.cor}">${risco.nivel}</span>
+      </div>
+    </div>
+
+    <div class="card-conteudo">
+      <p><strong>Tipo:</strong> Ponto cadastrado manualmente</p>
+      <p><strong>Temperatura:</strong> ${clima.temperature_2m}°C</p>
+      <p><strong>Umidade:</strong> ${clima.relative_humidity_2m}%</p>
+      <p><strong>Vento:</strong> ${clima.wind_speed_10m} km/h</p>
+      <p><strong>Chuva:</strong> ${clima.precipitation} mm</p>
+      <p><strong>Latitude:</strong> ${lat.toFixed(6)}</p>
+      <p><strong>Longitude:</strong> ${lon.toFixed(6)}</p>
+    </div>
+  `;
+
+  listaPontos.appendChild(card);
+});
