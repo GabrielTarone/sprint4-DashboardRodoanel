@@ -27,13 +27,19 @@ L.control
   })
   .addTo(map);
 
+// =============================
+// FERRAMENTAS DE DESENHO
+// =============================
+
 const camadaDesenhos = new L.FeatureGroup();
+
 map.addLayer(camadaDesenhos);
 
 const controleDesenho = new L.Control.Draw({
   edit: {
     featureGroup: camadaDesenhos,
   },
+
   draw: {
     polygon: true,
     polyline: true,
@@ -54,16 +60,364 @@ map.on(L.Draw.Event.CREATED, function (event) {
   console.log("Desenho criado:", layer.toGeoJSON());
 });
 
+// =============================
+// VARIÁVEIS GLOBAIS
+// =============================
+
 // Guarda os dados do GeoJSON para reutilizar ao atualizar/testar
 let dadosGeojson = null;
 
-// Camada separada só para os pontos, facilitando limpar e redesenhar
+// Camada separada para os pontos de monitoramento
 let camadaPontos = L.layerGroup().addTo(map);
 
-// Controla se o dashboard usa clima real ou clima simulado de alerta
+// Controla se o dashboard usa clima real ou clima simulado
 let modoTeste = false;
 
+// Controla o modo de cadastro manual de pontos
 let modoCadastro = false;
+
+// =============================
+// FAIXAS DE CLASSIFICAÇÃO DA VEGETAÇÃO
+// =============================
+
+const faixasVegetacao = [
+  {
+    alturaMin: 0,
+    alturaMax: 0.8,
+    classificacao: "Normal",
+    cor: "#2ecc71",
+    acao: "Nenhuma intervenção necessária",
+  },
+
+  {
+    alturaMin: 0.81,
+    alturaMax: 1.5,
+    classificacao: "Atenção",
+    cor: "#f1c40f",
+    acao: "Acompanhar evolução da vegetação",
+  },
+
+  {
+    alturaMin: 1.51,
+    alturaMax: 2.5,
+    classificacao: "Risco",
+    cor: "#e67e22",
+    acao: "Programar intervenção",
+  },
+
+  {
+    alturaMin: 2.51,
+    alturaMax: Infinity,
+    classificacao: "Crítico",
+    cor: "#e74c3c",
+    acao: "Realizar intervenção imediata",
+  },
+];
+
+// =============================
+// CLASSIFICAR VEGETAÇÃO
+// =============================
+
+function classificarVegetacao(altura) {
+  if (altura <= 0.8) {
+    return faixasVegetacao[0];
+  }
+
+  if (altura <= 1.5) {
+    return faixasVegetacao[1];
+  }
+
+  if (altura <= 2.5) {
+    return faixasVegetacao[2];
+  }
+
+  return faixasVegetacao[3];
+}
+
+// =============================
+// CLASSIFICAR RISCO CLIMÁTICO
+// =============================
+
+function classificarRiscoClimatico(clima) {
+  if (
+    clima.temperature_2m >= 30 ||
+    clima.wind_speed_10m >= 25 ||
+    clima.relative_humidity_2m <= 25
+  ) {
+    return {
+      nivel: "Alto",
+      cor: "#e74c3c",
+    };
+  }
+
+  if (
+    clima.temperature_2m >= 25 ||
+    clima.wind_speed_10m >= 15 ||
+    clima.relative_humidity_2m <= 40
+  ) {
+    return {
+      nivel: "Médio",
+      cor: "#f1c40f",
+    };
+  }
+
+  return {
+    nivel: "Baixo",
+    cor: "#2ecc71",
+  };
+}
+
+// =============================
+// OBTER DADOS CLIMÁTICOS
+// =============================
+
+// Centraliza a obtenção dos dados meteorológicos.
+// Assim o ponto automático e o ponto manual usam a mesma lógica.
+async function obterClima(lat, lon) {
+  if (modoTeste) {
+    return gerarClimaTeste();
+  }
+
+  try {
+    return await buscarClima(lat, lon);
+  } catch (error) {
+    console.error("Erro ao buscar clima. Usando dados de teste:", error);
+
+    return gerarClimaTeste();
+  }
+}
+
+// =============================
+// GERAR ALTURA FICTÍCIA DA VEGETAÇÃO
+// =============================
+
+function gerarAlturaVegetacao() {
+  return Number((Math.random() * (3.5 - 0.3) + 0.3).toFixed(1));
+}
+
+// =============================
+// CRIAR PONTO DE MONITORAMENTO
+// =============================
+
+// Esta função concentra a criação do marcador,
+// popup, card, botão de minimizar e interação
+// entre o mapa e o painel.
+function adicionarPontoMonitoramento({
+  nome,
+  tipo,
+  lat,
+  lon,
+  alturaVegetacao,
+  classificacaoVegetacao,
+  clima,
+  risco,
+}) {
+  // =============================
+  // CARD
+  // =============================
+
+  const listaPontos = document.getElementById("lista-pontos");
+
+  const card = document.createElement("div");
+
+  card.classList.add("card-ponto");
+
+  // A linha lateral representa o risco climático
+  card.style.borderLeftColor = classificacaoVegetacao.cor;
+
+  card.innerHTML = `
+    <div class="card-header">
+  <div>
+    <h3>${nome}</h3>
+
+    <div class="status-vegetacao">
+      Vegetação:
+      <span style="color:${classificacaoVegetacao.cor}">
+        ${classificacaoVegetacao.classificacao}
+      </span>
+    </div>
+
+    <div class="status-clima">
+      Clima:
+      <span style="color:${risco.cor}">
+        ${risco.nivel}
+      </span>
+    </div>
+  </div>
+
+  <button
+    class="btn-minimizar"
+    title="Minimizar card"
+  >
+    <span>−</span>
+  </button>
+</div>
+
+    <div class="card-conteudo">
+
+      <p>
+        <strong>Tipo:</strong>
+        ${tipo}
+      </p>
+
+      <p>
+        <strong>Altura da vegetação:</strong>
+        ${alturaVegetacao} m
+      </p>
+
+      <p>
+        <strong>Classificação:</strong>
+
+        <span style="color:${classificacaoVegetacao.cor}">
+          ${classificacaoVegetacao.classificacao}
+        </span>
+      </p>
+      <p>
+      <strong>---------------------------</strong>
+      </p>
+      <p>
+        <strong>Ação recomendada:</strong>
+        ${classificacaoVegetacao.acao}
+      </p>
+
+      <p>
+        <strong>Temperatura:</strong>
+        ${clima.temperature_2m}°C
+      </p>
+
+      <p>
+        <strong>Umidade:</strong>
+        ${clima.relative_humidity_2m}%
+      </p>
+
+      <p>
+        <strong>Vento:</strong>
+        ${clima.wind_speed_10m} km/h
+      </p>
+
+      <p>
+        <strong>Chuva:</strong>
+        ${clima.precipitation} mm
+      </p>
+
+      <p>
+        <strong>Latitude:</strong>
+        ${lat.toFixed(6)}
+      </p>
+
+      <p>
+        <strong>Longitude:</strong>
+        ${lon.toFixed(6)}
+      </p>
+
+    </div>
+  `;
+
+  listaPontos.appendChild(card);
+
+  // =============================
+  // BOTÃO DE MINIMIZAR
+  // =============================
+
+  const botaoMinimizar = card.querySelector(".btn-minimizar");
+
+  botaoMinimizar.addEventListener("click", () => {
+    card.classList.toggle("minimizado");
+
+    if (card.classList.contains("minimizado")) {
+      botaoMinimizar.querySelector("span").textContent = "+";
+    } else {
+      botaoMinimizar.querySelector("span").textContent = "−";
+    }
+  });
+
+  // =============================
+  // MARCADOR
+  // =============================
+
+  const marcador = L.circleMarker([lat, lon], {
+    radius: 8,
+    color: "#ffffff",
+    weight: 2,
+
+    // A cor representa a classificação da vegetação
+    fillColor: classificacaoVegetacao.cor,
+    fillOpacity: 1,
+
+    // A animação representa risco climático alto
+    className: risco.nivel === "Alto" ? "ponto-alerta" : "",
+  }).addTo(camadaPontos).bindPopup(`
+      <b>${nome}</b><br>
+      ${tipo}<br><br>
+
+      <b>Vegetação</b><br>
+
+      Altura:
+      ${alturaVegetacao} m<br>
+
+      Classificação:
+      <span style="color:${classificacaoVegetacao.cor}">
+        <b>${classificacaoVegetacao.classificacao}</b>
+      </span><br>
+
+      Ação recomendada:
+      ${classificacaoVegetacao.acao}<br><br>
+
+      <b>Condições climáticas</b><br>
+
+      Temperatura:
+      ${clima.temperature_2m}°C<br>
+
+      Umidade:
+      ${clima.relative_humidity_2m}%<br>
+
+      Vento:
+      ${clima.wind_speed_10m} km/h<br>
+
+      Chuva:
+      ${clima.precipitation} mm<br><br>
+
+      Risco climático:
+      <b>${risco.nivel}</b><br><br>
+
+      <b>Localização</b><br>
+
+      Lat:
+      ${lat.toFixed(6)}<br>
+
+      Lon:
+      ${lon.toFixed(6)}
+    `);
+
+  // =============================
+  // CLICAR NO MARCADOR
+  // =============================
+
+  marcador.on("click", () => {
+    // Garante que o card esteja aberto
+    card.classList.remove("minimizado");
+
+    botaoMinimizar.querySelector("span").textContent = "−";
+
+    // Leva o painel até o card
+    card.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+
+    // Destaca o card temporariamente
+    card.classList.add("card-destaque");
+
+    setTimeout(() => {
+      card.classList.remove("card-destaque");
+    }, 1800);
+  });
+
+  return {
+    marcador,
+    card,
+  };
+}
 
 // =============================
 // CARREGAR GEOJSON
@@ -71,6 +425,7 @@ let modoCadastro = false;
 
 fetch("dados/rodoanel-rocada.geojson")
   .then((response) => response.json())
+
   .then((data) => {
     dadosGeojson = data;
 
@@ -87,166 +442,80 @@ fetch("dados/rodoanel-rocada.geojson")
 
     gerarPontosMonitoramento(data);
   })
+
   .catch((error) => {
     console.error("Erro ao carregar o GeoJSON:", error);
   });
 
 // =============================
-// GERAR PONTOS DE MONITORAMENTO
+// GERAR 10 PONTOS DE MONITORAMENTO
 // =============================
 
 async function gerarPontosMonitoramento(geojson) {
-  // Limpa pontos antigos do mapa
+  // Limpa pontos antigos
   camadaPontos.clearLayers();
 
-  // Limpa cards antigos do painel lateral
+  // Limpa cards antigos
   document.getElementById("lista-pontos").innerHTML = "";
 
   const total = geojson.features.length;
   const quantidade = 10;
   const intervalo = Math.floor(total / quantidade);
 
-  for (let i = 0; i < quantidade; i++) {
-    const feature = geojson.features[i * intervalo];
+  // Seleciona 10 áreas distribuídas pelo GeoJSON
+  const pontosSelecionados = [];
 
+  for (let i = 0; i < quantidade; i++) {
+    pontosSelecionados.push(geojson.features[i * intervalo]);
+  }
+
+  // Processa cada ponto com forEach()
+  pontosSelecionados.forEach(async (feature, i) => {
     const primeiroVertice = feature.geometry.coordinates[0][0];
 
     const lon = primeiroVertice[0];
     const lat = primeiroVertice[1];
 
-    // Busca clima real ou usa clima simulado no modo teste
-    let clima;
+    // Altura fictícia do sensor
+    const alturaVegetacao = gerarAlturaVegetacao();
 
-    if (modoTeste) {
-      clima = gerarClimaTeste();
-    } else {
-      try {
-        clima = await buscarClima(lat, lon);
-      } catch (error) {
-        console.error("Erro ao buscar clima. Usando dados de teste:", error);
-        clima = gerarClimaTeste();
-      }
-    }
+    // Classificação da vegetação
+    const classificacaoVegetacao = classificarVegetacao(alturaVegetacao);
 
-    // Calcula o nível de risco com base no clima
-    let risco;
+    // Clima
+    const clima = await obterClima(lat, lon);
 
-    if (
-      clima.temperature_2m >= 30 ||
-      clima.wind_speed_10m >= 25 ||
-      clima.relative_humidity_2m <= 25
-    ) {
-      risco = { nivel: "Alto", cor: "#e74c3c" };
-    } else if (
-      clima.temperature_2m >= 25 ||
-      clima.wind_speed_10m >= 15 ||
-      clima.relative_humidity_2m <= 40
-    ) {
-      risco = { nivel: "Médio", cor: "#f1c40f" };
-    } else {
-      risco = { nivel: "Baixo", cor: "#2ecc71" };
-    }
+    // Risco climático
+    const risco = classificarRiscoClimatico(clima);
 
-    // =============================
-    // CRIA CARD NO PAINEL LATERAL
-    // =============================
-
-    const listaPontos = document.getElementById("lista-pontos");
-
-    const card = document.createElement("div");
-    card.classList.add("card-ponto");
-    card.style.borderLeftColor = risco.cor;
-
-    card.innerHTML = `
-      <div class="card-header">
-        <div>
-          <h3>Monitoramento ${i + 1}</h3>
-          <span style="color:${risco.cor}">${risco.nivel}</span>
-        </div>
-
-        <button class="btn-minimizar" title="Minimizar card">
-          <span>−</span>
-        </button>
-      </div>
-
-      <div class="card-conteudo">
-        <p><strong>Tipo:</strong> ${feature.properties.Name}</p>
-        <p><strong>Temperatura:</strong> ${clima.temperature_2m}°C</p>
-        <p><strong>Umidade:</strong> ${clima.relative_humidity_2m}%</p>
-        <p><strong>Vento:</strong> ${clima.wind_speed_10m} km/h</p>
-        <p><strong>Chuva:</strong> ${clima.precipitation} mm</p>
-        <p><strong>Latitude:</strong> ${lat.toFixed(6)}</p>
-        <p><strong>Longitude:</strong> ${lon.toFixed(6)}</p>
-      </div>
-    `;
-
-    listaPontos.appendChild(card);
-
-    // Botão de minimizar
-    const botaoMinimizar = card.querySelector(".btn-minimizar");
-
-    botaoMinimizar.addEventListener("click", () => {
-      card.classList.toggle("minimizado");
-
-      if (card.classList.contains("minimizado")) {
-        botaoMinimizar.querySelector("span").textContent = "+";
-      } else {
-        botaoMinimizar.querySelector("span").textContent = "−";
-      }
+    // Cria ponto completo
+    adicionarPontoMonitoramento({
+      nome: `Monitoramento ${i + 1}`,
+      tipo: feature.properties.Name,
+      lat,
+      lon,
+      alturaVegetacao,
+      classificacaoVegetacao,
+      clima,
+      risco,
     });
-
-    // =============================
-    // CRIA MARCADOR NO MAPA
-    // =============================
-
-    const marcador = L.circleMarker([lat, lon], {
-      radius: 8,
-      color: "#ffffff",
-      weight: 2,
-      fillColor: risco.cor,
-      fillOpacity: 1,
-      className: risco.nivel === "Alto" ? "ponto-alerta" : "",
-    }).addTo(camadaPontos).bindPopup(`
-        <b>Monitoramento ${i + 1}</b><br>
-        Tipo: ${feature.properties.Name}<br><br>
-
-        Temperatura: ${clima.temperature_2m}°C<br>
-        Umidade: ${clima.relative_humidity_2m}%<br>
-        Vento: ${clima.wind_speed_10m} km/h<br>
-        Chuva: ${clima.precipitation} mm<br><br>
-
-        Risco: <b>${risco.nivel}</b><br>
-        Lat: ${lat.toFixed(6)}<br>
-        Lon: ${lon.toFixed(6)}
-      `);
-
-    // Ao clicar no ponto do mapa, destaca o card correspondente
-    marcador.on("click", () => {
-      // Garante que o card esteja aberto
-      card.classList.remove("minimizado");
-      botaoMinimizar.querySelector("span").textContent = "−";
-
-      // Rola o painel até o card
-      card.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-
-      // Aplica destaque visual temporário
-      card.classList.add("card-destaque");
-
-      setTimeout(() => {
-        card.classList.remove("card-destaque");
-      }, 1800);
-    });
-  }
+  });
 }
+
 // =============================
 // INTEGRAÇÃO COM OPEN-METEO
 // =============================
 
 async function buscarClima(lat, lon) {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m`;
+  const url =
+    `https://api.open-meteo.com/v1/forecast?` +
+    `latitude=${lat}` +
+    `&longitude=${lon}` +
+    `&current=` +
+    `temperature_2m,` +
+    `relative_humidity_2m,` +
+    `precipitation,` +
+    `wind_speed_10m`;
 
   const resposta = await fetch(url);
 
@@ -289,10 +558,46 @@ legenda.onAdd = function () {
   const div = L.DomUtil.create("div", "legenda");
 
   div.innerHTML = `
-    <h4>Risco</h4>
-    <p><span class="bolinha verde"></span> Baixo</p>
-    <p><span class="bolinha amarelo"></span> Médio</p>
-    <p><span class="bolinha vermelho"></span> Alto</p>
+    <h4>Classificação da vegetação</h4>
+
+    <p>
+      <span class="bolinha verde"></span>
+      Normal — 0 a 0,8 m
+    </p>
+
+    <p>
+      <span class="bolinha amarelo"></span>
+      Atenção — 0,81 a 1,5 m
+    </p>
+
+    <p>
+      <span class="bolinha laranja"></span>
+      Risco — 1,51 a 2,5 m
+    </p>
+
+    <p>
+      <span class="bolinha vermelho"></span>
+      Crítico — acima de 2,5 m
+    </p>
+
+    <div class="separador-legenda"></div>
+
+    <h4>Risco climático</h4>
+
+    <p>
+      <span class="bolinha verde"></span>
+      Baixo
+    </p>
+
+    <p>
+      <span class="bolinha amarelo"></span>
+      Médio
+    </p>
+
+    <p>
+      <span class="bolinha vermelho alerta-pulsante"></span>
+      Alto
+    </p>
   `;
 
   return div;
@@ -301,18 +606,22 @@ legenda.onAdd = function () {
 legenda.addTo(map);
 
 // =============================
-// GERANDO VALORES PARA TESTE DE CLIMA COM ALERTAS
+// GERAR VALORES PARA TESTE DE CLIMA
 // =============================
 
 function gerarClimaTeste() {
   const niveis = ["Baixo", "Médio", "Alto"];
+
   const nivelSorteado = niveis[Math.floor(Math.random() * niveis.length)];
 
   if (nivelSorteado === "Baixo") {
     return {
       temperature_2m: gerarNumeroAleatorio(18, 24),
+
       relative_humidity_2m: gerarNumeroAleatorio(50, 80),
+
       wind_speed_10m: gerarNumeroAleatorio(2, 14),
+
       precipitation: gerarNumeroAleatorio(0, 4),
     };
   }
@@ -320,28 +629,47 @@ function gerarClimaTeste() {
   if (nivelSorteado === "Médio") {
     return {
       temperature_2m: gerarNumeroAleatorio(25, 29),
+
       relative_humidity_2m: gerarNumeroAleatorio(30, 45),
+
       wind_speed_10m: gerarNumeroAleatorio(15, 24),
+
       precipitation: gerarNumeroAleatorio(0, 6),
     };
   }
 
   return {
     temperature_2m: gerarNumeroAleatorio(30, 42),
+
     relative_humidity_2m: gerarNumeroAleatorio(10, 25),
+
     wind_speed_10m: gerarNumeroAleatorio(25, 40),
+
     precipitation: gerarNumeroAleatorio(0, 10),
   };
 }
+
+// =============================
+// GERAR NÚMERO ALEATÓRIO
+// =============================
 
 function gerarNumeroAleatorio(min, max) {
   return Number((Math.random() * (max - min) + min).toFixed(1));
 }
 
+// =============================
+// CADASTRAR NOVO PONTO
+// =============================
+
 document.getElementById("btn-cadastrar").addEventListener("click", () => {
   modoCadastro = true;
+
   alert("Clique no mapa para cadastrar um novo ponto de monitoramento.");
 });
+
+// =============================
+// CLIQUE NO MAPA PARA CADASTRO
+// =============================
 
 map.on("click", async function (event) {
   if (!modoCadastro) return;
@@ -355,77 +683,29 @@ map.on("click", async function (event) {
 
   if (!nome) return;
 
-  let clima;
+  // Altura fictícia
+  const alturaVegetacao = gerarAlturaVegetacao();
 
-  if (modoTeste) {
-    clima = gerarClimaTeste();
-  } else {
-    clima = await buscarClima(lat, lon);
-  }
+  // Classificação da vegetação
+  const classificacaoVegetacao = classificarVegetacao(alturaVegetacao);
 
-  let risco;
+  // Obtém clima usando a mesma função
+  // dos pontos do GeoJSON
+  const clima = await obterClima(lat, lon);
 
-  if (
-    clima.temperature_2m >= 30 ||
-    clima.wind_speed_10m >= 25 ||
-    clima.relative_humidity_2m <= 25
-  ) {
-    risco = { nivel: "Alto", cor: "#e74c3c" };
-  } else if (
-    clima.temperature_2m >= 25 ||
-    clima.wind_speed_10m >= 15 ||
-    clima.relative_humidity_2m <= 40
-  ) {
-    risco = { nivel: "Médio", cor: "#f1c40f" };
-  } else {
-    risco = { nivel: "Baixo", cor: "#2ecc71" };
-  }
+  // Classifica o risco climático
+  const risco = classificarRiscoClimatico(clima);
 
-  L.circleMarker([lat, lon], {
-    radius: 8,
-    color: "#ffffff",
-    weight: 2,
-    fillColor: risco.cor,
-    fillOpacity: 1,
-    className: risco.nivel === "Alto" ? "ponto-alerta" : "",
-  }).addTo(camadaPontos).bindPopup(`
-      <b>${nome}</b><br>
-      Ponto cadastrado manualmente<br><br>
-
-      Temperatura: ${clima.temperature_2m}°C<br>
-      Umidade: ${clima.relative_humidity_2m}%<br>
-      Vento: ${clima.wind_speed_10m} km/h<br>
-      Chuva: ${clima.precipitation} mm<br><br>
-
-      Risco: <b>${risco.nivel}</b><br>
-      Lat: ${lat.toFixed(6)}<br>
-      Lon: ${lon.toFixed(6)}
-    `);
-
-  const listaPontos = document.getElementById("lista-pontos");
-
-  const card = document.createElement("div");
-  card.classList.add("card-ponto");
-  card.style.borderLeftColor = risco.cor;
-
-  card.innerHTML = `
-    <div class="card-header">
-      <div>
-        <h3>${nome}</h3>
-        <span style="color:${risco.cor}">${risco.nivel}</span>
-      </div>
-    </div>
-
-    <div class="card-conteudo">
-      <p><strong>Tipo:</strong> Ponto cadastrado manualmente</p>
-      <p><strong>Temperatura:</strong> ${clima.temperature_2m}°C</p>
-      <p><strong>Umidade:</strong> ${clima.relative_humidity_2m}%</p>
-      <p><strong>Vento:</strong> ${clima.wind_speed_10m} km/h</p>
-      <p><strong>Chuva:</strong> ${clima.precipitation} mm</p>
-      <p><strong>Latitude:</strong> ${lat.toFixed(6)}</p>
-      <p><strong>Longitude:</strong> ${lon.toFixed(6)}</p>
-    </div>
-  `;
-
-  listaPontos.appendChild(card);
+  // Reutiliza toda a lógica de criação
+  // do card e do marcador
+  adicionarPontoMonitoramento({
+    nome,
+    tipo: "Ponto cadastrado manualmente",
+    lat,
+    lon,
+    alturaVegetacao,
+    classificacaoVegetacao,
+    clima,
+    risco,
+  });
 });
