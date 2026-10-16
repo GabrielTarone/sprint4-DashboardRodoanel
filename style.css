@@ -306,3 +306,74 @@ main {
 .status-clima span {
   margin-left: 3px;
 }
+
+/* =============================
+   RESUMO DE PRIORIDADES - SPRINT 4
+============================= */
+
+.resumo-prioridades {
+  margin-bottom: 18px;
+  padding: 12px;
+  background: #1f3342;
+  border-radius: 8px;
+}
+
+.resumo-prioridades h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.resumo-grade {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.resumo-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  background: #16242f;
+  border-left: 4px solid;
+  border-radius: 6px;
+}
+
+.resumo-contagem {
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.resumo-item div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.resumo-item strong {
+  font-size: 11px;
+}
+
+.resumo-item small {
+  color: #b8c7d1;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.prioridade-p1 {
+  border-left-color: #e74c3c;
+}
+
+.prioridade-p2 {
+  border-left-color: #e67e22;
+}
+
+.prioridade-p3 {
+  border-left-color: #f1c40f;
+}
+
+.prioridade-p4 {
+  border-left-color: #2ecc71;
+}

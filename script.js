@@ -76,6 +76,9 @@ let modoTeste = false;
 // Controla o modo de cadastro manual de pontos
 let modoCadastro = false;
 
+// Guarda os dados de todos os pontos monitorados
+let pontosMonitorados = [];
+
 // =============================
 // FAIXAS DE CLASSIFICAÇÃO DA VEGETAÇÃO
 // =============================
@@ -87,6 +90,8 @@ const faixasVegetacao = [
     classificacao: "Normal",
     cor: "#2ecc71",
     acao: "Nenhuma intervenção necessária",
+    prioridade: 4,
+    prioridadeTexto: "Monitoramento de rotina",
   },
 
   {
@@ -95,6 +100,8 @@ const faixasVegetacao = [
     classificacao: "Atenção",
     cor: "#f1c40f",
     acao: "Acompanhar evolução da vegetação",
+    prioridade: 3,
+    prioridadeTexto: "Acompanhamento",
   },
 
   {
@@ -103,6 +110,8 @@ const faixasVegetacao = [
     classificacao: "Risco",
     cor: "#e67e22",
     acao: "Programar intervenção",
+    prioridade: 2,
+    prioridadeTexto: "Intervenção programada",
   },
 
   {
@@ -111,6 +120,8 @@ const faixasVegetacao = [
     classificacao: "Crítico",
     cor: "#e74c3c",
     acao: "Realizar intervenção imediata",
+    prioridade: 1,
+    prioridadeTexto: "Intervenção imediata",
   },
 ];
 
@@ -272,6 +283,16 @@ function adicionarPontoMonitoramento({
           ${classificacaoVegetacao.classificacao}
         </span>
       </p>
+
+      <p>
+        <strong>Prioridade de atendimento:</strong>
+
+        <span style="color:${classificacaoVegetacao.cor}; font-weight:bold;">
+          P${classificacaoVegetacao.prioridade} —
+          ${classificacaoVegetacao.prioridadeTexto}
+        </span>
+      </p>
+
       <p>
       <strong>---------------------------</strong>
       </p>
@@ -413,10 +434,79 @@ function adicionarPontoMonitoramento({
     }, 1800);
   });
 
+  // Organiza os dados do ponto em um objeto
+  const pontoMonitorado = {
+    nome,
+    tipo,
+    lat,
+    lon,
+    alturaVegetacao,
+    prioridade: classificacaoVegetacao.prioridade,
+    prioridadeTexto: classificacaoVegetacao.prioridadeTexto,
+    classificacaoVegetacao: classificacaoVegetacao.classificacao,
+    corClassificacao: classificacaoVegetacao.cor,
+    acaoRecomendada: classificacaoVegetacao.acao,
+    clima,
+    riscoClimatico: risco.nivel,
+    marcador,
+    card,
+  };
+
+  // Adiciona o objeto ao array de pontos monitorados
+  pontosMonitorados.push(pontoMonitorado);
+
+  // Atualiza a ordem dos cards após cada cadastro
+  ordenarPontosPorPrioridade();
+
+  // Atualiza os contadores do painel
+  atualizarResumoPrioridades();
+
   return {
     marcador,
     card,
   };
+}
+
+// =============================
+// ORDENAR PONTOS POR PRIORIDADE
+// =============================
+
+function ordenarPontosPorPrioridade() {
+  const listaPontos = document.getElementById("lista-pontos");
+
+  // Ordena do número menor para o maior
+  pontosMonitorados.sort((a, b) => {
+    return a.prioridade - b.prioridade;
+  });
+
+  // Reorganiza os cards no painel
+  pontosMonitorados.forEach((ponto) => {
+    listaPontos.appendChild(ponto.card);
+  });
+}
+
+// =============================
+// ATUALIZAR RESUMO DE PRIORIDADES
+// =============================
+
+function atualizarResumoPrioridades() {
+  const contagem = {
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+  };
+
+  // Conta quantos pontos existem em cada prioridade
+  pontosMonitorados.forEach((ponto) => {
+    contagem[ponto.prioridade]++;
+  });
+
+  // Atualiza os números exibidos no HTML
+  document.getElementById("contagem-p1").textContent = contagem[1];
+  document.getElementById("contagem-p2").textContent = contagem[2];
+  document.getElementById("contagem-p3").textContent = contagem[3];
+  document.getElementById("contagem-p4").textContent = contagem[4];
 }
 
 // =============================
@@ -452,11 +542,16 @@ fetch("dados/rodoanel-rocada.geojson")
 // =============================
 
 async function gerarPontosMonitoramento(geojson) {
-  // Limpa pontos antigos
+  // Limpa os marcadores antigos
   camadaPontos.clearLayers();
 
-  // Limpa cards antigos
+  // Limpa os cards antigos
   document.getElementById("lista-pontos").innerHTML = "";
+
+  // Limpa os dados anteriores
+  pontosMonitorados = [];
+
+  atualizarResumoPrioridades();
 
   const total = geojson.features.length;
   const quantidade = 10;
@@ -469,26 +564,28 @@ async function gerarPontosMonitoramento(geojson) {
     pontosSelecionados.push(geojson.features[i * intervalo]);
   }
 
-  // Processa cada ponto com forEach()
-  pontosSelecionados.forEach(async (feature, i) => {
+  // Processa um ponto por vez
+  for (let i = 0; i < pontosSelecionados.length; i++) {
+    const feature = pontosSelecionados[i];
+
     const primeiroVertice = feature.geometry.coordinates[0][0];
 
     const lon = primeiroVertice[0];
     const lat = primeiroVertice[1];
 
-    // Altura fictícia do sensor
+    // Gera altura fictícia da vegetação
     const alturaVegetacao = gerarAlturaVegetacao();
 
-    // Classificação da vegetação
+    // Classifica a vegetação
     const classificacaoVegetacao = classificarVegetacao(alturaVegetacao);
 
-    // Clima
+    // Obtém os dados climáticos
     const clima = await obterClima(lat, lon);
 
-    // Risco climático
+    // Classifica o risco climático
     const risco = classificarRiscoClimatico(clima);
 
-    // Cria ponto completo
+    // Cria o ponto e o adiciona ao dashboard
     adicionarPontoMonitoramento({
       nome: `Monitoramento ${i + 1}`,
       tipo: feature.properties.Name,
@@ -499,7 +596,12 @@ async function gerarPontosMonitoramento(geojson) {
       clima,
       risco,
     });
-  });
+
+    // Aguarda 1 segundo antes da próxima consulta real
+    if (!modoTeste && i < pontosSelecionados.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
 }
 
 // =============================
