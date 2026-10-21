@@ -18,7 +18,7 @@ const mapaEscuro = L.tileLayer(
   },
 );
 
-mapaEscuro.addTo(map);
+mapaClaro.addTo(map);
 
 L.control
   .layers({

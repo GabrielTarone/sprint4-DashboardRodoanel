@@ -14,3 +14,6 @@
 4. O dashboard será carregado automaticamente.
 
 **Observação:** a conexão com a internet é necessária para carregar os mapas, as bibliotecas utilizadas pelo dashboard e os dados meteorológicos da Open-Meteo.
+
+**Observação 2:** o modo escuro está atualmente com uma marca d'água, isto ocorre devido a uma recente atualização de políticas da OpenMeteo pedindo uma chave de API prórpia para uso dos mapas.
+Para contornar tal problema é possível utilizar o sistema no modo claro normalmente.
